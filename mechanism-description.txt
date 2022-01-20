@@ -1,0 +1,72 @@
+###########################
+Sharding mechanism
+###########################
+
+Each node stores shard IDs as a dictionary, called shard_ids. This dictionary stores the address of each replica and its current shard assignment as a key-value pair.
+
+Shard Assignment: To ensure that each node has the same list of shard_ids, there must be a deterministic process to assign shard IDs. The process the program uses is to take the list of replicas (at startup, this is from the view environmental variable), sort the list (to ensure consistent ordering in each node), and assign each node shard id = i modulo n, where i is its index in the array and n is the total number of shards.
+
+Hash Ring and Consistent Hashing: Our system uses a HashRing data structure to determine which shard a key belongs to. The HashRing is initialized with the number of shards in the system. (This can be modified later.) The HashRing divides the possible outputs of the hash function evenly between the shards using the following process:
+- Let HASH_MAX be the maximum possible output of the hash function. (The hash function will produce a number between 0 and HASH_MAX.)
+- Let n be the number of shards.
+- The first shard will be responsible for keys that hash to values between 0 and HASH_MAX/n.
+- The second shard is responsible for keys that hash to values between HASH_MAX/n and 2*HASH_MAX/n.
+- The i-th shard is responsible for keys that hash to values between (i-1)*HASH_MAX/n and (i)*HASH_MAX/n, for all 0 <= i < n.
+The HashRing uses the MD5 hash to choose where keys will go.
+
+The PUT, DELETE, and GET operations for the key-value store from the previous assignment have been modified. 
+When receiving a PUT/DELETE/GET request from a client, the node checks which shard the key belongs in.
+If the key belongs to the shard of the node that received the request, process the request as before. (Check causal metadata, do the operation on the key-value store, and send a response.)
+If they key does NOT belong to the node's shard, check shard_ids to find a node that is in the correct shard. Forward the request to that node, and respond to the client with the response that node gives.
+
+Reshard Operation:
+- The node that received the reshard request executes the shard assignment algorithm described above.
+- The node then broadcasts the request to the other nodes, including the shard assignments. 
+At this point, every node knows that the reshard is happening, and knows the new shard assignments for each node.
+Nodes must now transfer key-value pairs to the shards that have been assigned them. Each node does the following:
+- For each key in the key-value store, check if the key belongs to the current shard. If it does, then send the key-value pair to all the other nodes in the shard. If it does not, then send it to each of the nodes in the shard it belongs in. 
+- For each key that is now in the key-value store, check again if the key belongs to the current shard. If it does not, delete the key-value pair.
+
+Add New Member:
+- The node sending that received the new-member request adds the replica and shard ID to its shard_ids data structure.
+- The node forwards this new information to the other nodes in the system.
+- Nodes that share a shard with the newly added node send their key-value store contents to the new node, which it integrates into its own key-value store. The new node also gets its shard_ids data structure from the other nodes.
+
+Getting the number of keys stored in a shard:
+- The node that receives the request will see if it is in the correct shard.
+    - if it is it returns the number of key in its store
+    - Otherwise the node forwards the request to the first node it finds in the correct shard and returns the result from that.
+
+Getting the members of a shard:
+- The node that receives the request will check its internal list of the sockets mapped to the shard IDs and return the sockets in the specified shard.
+
+Getting the shard id of a node:
+- The node that receives the request checks its internal list of the sockets mapped to the shard ids and returns the shard id for itself.
+
+Getting the IDs of all shards in the store:
+- The node that receives the request checks its internal list, gets all of the unique IDs, and returns a list of the unique IDs.
+- The IDs are filtered using the set() type.
+
+###########################
+Causal consistency tracking
+###########################
+Note: This functionality is the same as the previous assignment, so this description is copied from the previous assignment.
+
+Each replica has a vector clock implemented as a dictionary, called vclock, which stores the address of a replica and its vector clock as key-value pairs. 
+
+Each response from a replica will contain "causal-metadata" included in the response. The client should include the most recent causal metadata it has received in each of its requests.
+
+When a replica receives a PUT request from a client and a key is successfully added or updated, the replica updates vclock by incrementing the vector clock associated with its own address. Then, for each replica in its view, it sends a broadcast (on the "consistency" endpoint) to the other replicas indicating they should update their key-value store to contain the new data.
+
+If another replica fails to respond to the consistency update, the replica sending it will note that replica as down. It will remove it from its view, and send messages to the other replicas to notify them that the replica is down and should also be rmeoved from their views.
+
+When receiving any request, a replica will compare its own vclock with the causal metadata sent with the client. If the replica's vclock is behind any other replica (its value of vclock[a] is less than causal-metadata[a]), indicating that the replica has a newer version of the key-value store, it will query the other replicas to get an updated copy of the key-value store, then update its vclock accordingly, and continue processing the request. This situation occurs when a replica is temporarily down and cannot receive consistency updates from other replicas, then comes back up.
+
+###########################
+Detecting a Replica is Down
+###########################
+First, on startup of a new node it tries to add each node in the environmental variable VIEW to its view using the key-value-store-view PUT endpoint. If it is unable to add a node to its view, then it adds this node to a list called downed_replicas. For each node in downed_replicas, we broadcast a key-value-store-view DELETE to delete this node from every replica's view.
+
+In the key-value-store PUT endpoint, in the case that the node given the initial request is not in the correct shard, we attempted to forward the PUT request to a node in the correct shard, and no response was returned from this node, we assume the node is down and broadcast a key-value-store-view DELETE to every replica.
+
+In the key-value-store DELETE endpoint, in the case that the node given the initial request is not in the correct shard, we attempted to forward the DELETE request to a node in the correct shard, and no response was returned from this node, we assume the node is down and broadcast a key-value-store-view DELETE to every replica.

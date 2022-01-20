@@ -1,0 +1,19 @@
+Overall, we feel that all members contributed fairly. We called many times throughout to discuss our approach to the project, tackle problems together, and determine the best way forward. 
+We created skeletons for code that we needed to implement, and various people on our team filled in the skeletons with code on their own time. We kept touching base with each other and working on the project throughout the timeline.
+
+The following is a brief timeline of the project:
+We called and created a document with notes and how to approach the assignment
+Hunter created a skeleton for the code.
+Max started on the consistent hashing implementation
+Max debugged and added code where needed
+We called again and made a list of TODO's. Assigned initial TODO's to various members
+Hunter and Alyssa added code where needed
+We had most of our skeleton filled in, needed to bugfix heavily and add functionality that we had missed/forgotten
+Max and Hunter wrote code for resharding endpoint
+Alyssa cleaned the code base by removing unnecessary code and comments
+Each person started testing the code against personal tests and the test cases provided, fixed bugs when found
+
+Signed,
+Alyssa House
+Hunter Brown
+Maxwell Chow
